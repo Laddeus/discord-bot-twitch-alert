@@ -6,6 +6,7 @@ require("dotenv").config();
 
 const clientID = process.env.TWITCH_CLIENT_ID;
 const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+const discordToken = process.env.DISCORD_TOKEN;
 
 const bot = new Discord.Client();
 const streamerWatchList = [];
@@ -27,7 +28,7 @@ getTwitchAccessToken();
 bot.on("ready", async () => {
   console.log("Bot is online");
   channelToPostIn = bot.channels.cache.find(
-    (channel) => channel.name == "stream-alert"
+    (channel) => channel.name == "test-channel"
   );
 
   setTimeout(scanWatchLists, 10000);
@@ -204,7 +205,7 @@ function getTwitchAccessToken() {
     .then((res) => res.json())
     .then((data) => {
       accessToken = data.access_token;
-      bot.login(process.env.TOKEN);
+      bot.login(discordToken);
     })
     .catch((error) => console.log(error));
 }
