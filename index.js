@@ -28,7 +28,7 @@ getTwitchAccessToken();
 bot.on("ready", async () => {
   console.log("Bot is online");
   channelToPostIn = bot.channels.cache.find(
-    (channel) => channel.name == "test-channel"
+    (channel) => channel.name === "stream-alert"
   );
 
   setTimeout(scanWatchLists, 10000);
