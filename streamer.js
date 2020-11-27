@@ -1,42 +1,29 @@
 const { default: fetch } = require("node-fetch");
 
 class Streamer {
-  constructor(streamerName) {
+  constructor(streamerName, streamerId) {
     this.name = streamerName;
+    this.id = streamerId;
     this.isLive = false;
     this.streamTitle = "";
     this.streamStartTime = null;
   }
 
-  async updateInfo(clientID, accessToken) {
-    const streamerInfo = await this.fetchInfo(clientID, accessToken);
-    this.isLive = streamerInfo.is_live;
-    this.streamTitle = streamerInfo.title;
-    this.streamStartTime = this.isLive ? streamerInfo.started_at : null;
+  setInfo(streamInfo) {
+    if (streamInfo) {
+      this.isLive = streamInfo.is_live;
+      this.streamTitle = streamInfo.title;
+      this.streamStartTime = streamInfo.started_at;
+    }
   }
 
-  async fetchInfo(clientID, accessToken) {
-    const requestURL = `https://api.twitch.tv/helix/search/channels?query=${this.name}`;
-    const requestOptions = {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "client-id": clientID,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    };
-
-    try {
-      const response = await fetch(requestURL, requestOptions);
-
-      if (response.ok) {
-        const streamers = await response.json();
-
-        return streamers.data[0]; // return first streamer found in the search list
-      }
-    } catch (error) {
-      console.log(error);
+  updateInfo(streamInfo) {
+    if (streamInfo) {
+      this.streamTitle = streamInfo.title;
+      this.streamStartTime = streamInfo.started_at;
     }
+
+    this.isLive = Boolean(streamInfo);
   }
 }
 
