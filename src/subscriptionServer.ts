@@ -62,8 +62,12 @@ export default class SubscriptionServer {
       .get((req: Request, res: Response) => {
         // verify that the request signature is valid
 
+        res.status(200);
+
         if (req.query["hub.challenge"]) {
-          res.status(200).send(req.query["hub.challenge"]);
+          res.send(req.query["hub.challenge"]);
+        } else {
+          res.send("Hi");
         }
       })
       .post((req: Request, res: Response) => {
