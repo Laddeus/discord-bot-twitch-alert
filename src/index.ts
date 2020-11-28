@@ -1,13 +1,39 @@
-const Discord = require("discord.js");
-const fetch = require("node-fetch");
-const Streamer = require("./streamer");
-const SubscriptionServer = require("./server");
+import {
+  Client,
+  Channel,
+  Message,
+  TextChannel,
+  DMChannel,
+  NewsChannel,
+  TextBasedChannelFields,
+} from "discord.js";
+import e from "express";
+import fetch from "node-fetch";
+import Streamer from "./streamer";
+import SubscriptionServer from "./subscriptionServer";
 require("dotenv").config();
 
+interface CommandActions {
+  [key: string]: (commandArgs: string[], channel: AlertChannel) => void;
+}
+
+type AlertChannel = TextBasedChannelFields;
+
 class TwitchAlert {
+  private bot: Client;
+  private streamerWatchList: Streamer[];
+  private usageMessage: string;
+  private availableCommands: CommandActions;
+  private clientID!: string | undefined;
+  private clientSecret!: string | undefined;
+  private discordToken!: string | undefined;
+  private channelToPostIn!: AlertChannel;
+  private accessToken!: string;
+  private subscriptionServer!: SubscriptionServer;
+
   constructor() {
     this.setEnvriomentVariables();
-    this.bot = new Discord.Client();
+    this.bot = new Client();
     this.setupBotListeners();
 
     this.streamerWatchList = [];
@@ -31,12 +57,12 @@ class TwitchAlert {
   setupBotListeners() {
     this.bot.on("ready", async () => {
       console.log("Bot is online");
-      this.channelToPostIn = this.bot.channels.cache.find(
-        (channel) => channel.name === "test-channel"
+      this.channelToPostIn = <TextChannel>(
+        this.bot.channels.cache.get("401356624310173716")
       );
     });
 
-    this.bot.on("message", (receivedMessage) => {
+    this.bot.on("message", (receivedMessage: Message) => {
       if (!receivedMessage.author.bot) {
         const messageText = receivedMessage.content;
 
@@ -47,7 +73,10 @@ class TwitchAlert {
 
           const action = this.availableCommands[commandName];
           if (action) {
-            action(commandArgs, receivedMessage.channel);
+            action(
+              commandArgs,
+              <TextBasedChannelFields>receivedMessage.channel
+            );
           } else {
             receivedMessage.channel.send(this.usageMessage);
           }
@@ -71,18 +100,22 @@ class TwitchAlert {
       if (response.ok) {
         const data = await response.json();
         this.accessToken = data.access_token;
-        this.subscriptionServer = new SubscriptionServer(
-          this.accessToken,
-          this.clientID
-        );
-        await this.subscriptionServer.startServerAndcreateSubscriptionEndpoint(
-          this.onStreamChange,
-          () => {
-            console.log("Server up and running");
-          }
-        );
 
-        await this.bot.login(this.discordToken);
+        if (this.accessToken && this.clientID) {
+          this.subscriptionServer = new SubscriptionServer(
+            this.accessToken,
+            this.clientID!
+          );
+
+          await this.subscriptionServer.startServerAndcreateSubscriptionEndpoint(
+            this.onStreamChange,
+            () => {
+              console.log("Server up and running");
+            }
+          );
+
+          await this.bot.login(this.discordToken);
+        }
       }
     } catch (error) {
       console.log(error);
@@ -101,18 +134,18 @@ class TwitchAlert {
     return fetch(requestString, requestOptions);
   }
 
-  listCurrentLiveStreamers(commandArgs, channel) {
+  listCurrentLiveStreamers(commandArgs: string[], channel: AlertChannel) {
     const liveStreamers = this.streamerWatchList.filter(
-      (streamer) => streamer.isLive
+      (streamer: Streamer) => streamer.IsLive
     );
 
-    const liveStreamersWithTime = liveStreamers.map((streamer) => {
-      const streamStartTime = new Date(streamer.streamStartTime);
+    const liveStreamersWithTime = liveStreamers.map((streamer: Streamer) => {
+      const streamStartTime = new Date(streamer.StreamStartTime);
       const currentTime = Date.now();
       const streamLiveTime =
         (currentTime - streamStartTime.getTime()) / (1000 * 3600);
 
-      return `${streamer.name}(${streamLiveTime.toPrecision(2)} hours)`;
+      return `${streamer.Name}(${streamLiveTime.toPrecision(2)} hours)`;
     });
 
     channel.send(
@@ -122,10 +155,10 @@ class TwitchAlert {
     );
   }
 
-  listCurrentWatchList(commandArgs, channel) {
+  listCurrentWatchList(commandArgs: string[], channel: AlertChannel) {
     if (this.streamerWatchList.length > 0) {
       const streamerNames = this.streamerWatchList.map(
-        (streamer) => streamer.name
+        (streamer) => streamer.Name
       );
       channel.send(streamerNames.join(", "));
     } else {
@@ -133,7 +166,7 @@ class TwitchAlert {
     }
   }
 
-  async removeStreamers(streamersToRemove, channel) {
+  async removeStreamers(streamersToRemove: string[], channel: AlertChannel) {
     const streamersSuccessfullyRemoved = await this.removeStreamersFromWatchList(
       streamersToRemove
     );
@@ -149,9 +182,9 @@ class TwitchAlert {
     }
   }
 
-  async addStreamers(stremersToAdd, channel) {
+  async addStreamers(streamersToAdd: string[], channel: AlertChannel) {
     const streamersSuccessfullyAdded = await this.addStreamersToWatchList(
-      stremersToAdd
+      streamersToAdd
     );
 
     if (streamersSuccessfullyAdded.length > 0) {
@@ -165,14 +198,18 @@ class TwitchAlert {
     }
   }
 
-  alertChannel(streamer, channel) {
-    channel.send(
-      `@here, ${streamer.name} is LIVE\n${streamer.streamTitle}\nhttps://www.twitch.tv/${streamer.name}`
-    );
+  alertChannel(streamer: Streamer, channel: AlertChannel) {
+    if (channel) {
+      channel.send(
+        `@here, ${streamer.Name} is LIVE\n${streamer.StreamTitle}\nhttps://www.twitch.tv/${streamer.Name}`
+      );
+    } else {
+      console.log("Channel not set up.");
+    }
   }
 
   // might need to loop backwards!!
-  async removeStreamersFromWatchList(streamersToRemove) {
+  async removeStreamersFromWatchList(streamersToRemove: string[]) {
     const successfullyRemovedStreamers = [];
 
     for (const streamer of streamersToRemove) {
@@ -184,11 +221,11 @@ class TwitchAlert {
     return successfullyRemovedStreamers;
   }
 
-  async removeStreamerFromWatchList(streamerToRemove) {
+  async removeStreamerFromWatchList(streamerToRemove: string) {
     let streamerRemovedSuccessfully = false;
 
     const indexOfStreamerToRemove = this.streamerWatchList.findIndex(
-      (streamer) => streamer.name === streamerToRemove
+      (streamer) => streamer.Name === streamerToRemove
     );
 
     if (indexOfStreamerToRemove >= 0) {
@@ -205,7 +242,7 @@ class TwitchAlert {
     return streamerRemovedSuccessfully;
   }
 
-  async addStreamersToWatchList(streamersToAdd) {
+  async addStreamersToWatchList(streamersToAdd: string[]) {
     const successfullyAddedStreamers = [];
 
     for (const streamer of streamersToAdd) {
@@ -217,12 +254,12 @@ class TwitchAlert {
     return successfullyAddedStreamers;
   }
 
-  async addStreamerToWatchList(streamerToAdd) {
+  async addStreamerToWatchList(streamerToAdd: string) {
     let streamerAddedSuccessfully = false;
 
     if (streamerToAdd !== "") {
       const streamerFound = this.streamerWatchList.find(
-        (streamer) => streamer.name === streamerToAdd
+        (streamer) => streamer.Name === streamerToAdd
       );
 
       if (!streamerFound) {
@@ -243,9 +280,9 @@ class TwitchAlert {
     return streamerAddedSuccessfully;
   }
 
-  async setStreamerInfo(streamer) {
+  async setStreamerInfo(streamer: Streamer) {
     try {
-      const response = await this.fetchStreamerInfo(streamer.name);
+      const response = await this.fetchStreamerInfo(streamer.Name);
       if (response.ok) {
         const data = await response.json();
         streamer.setInfo(data.data[0]);
@@ -255,13 +292,13 @@ class TwitchAlert {
     }
   }
 
-  fetchStreamerInfo(streamerName) {
+  fetchStreamerInfo(streamerName: string) {
     const requestURL = `https://api.twitch.tv/helix/search/channels?query=${streamerName}&first=1`;
     const requestOptions = {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "Client-Id": this.clientID,
+        "Client-Id": this.clientID!,
         Authorization: `Bearer ${this.accessToken}`,
       },
     };
@@ -269,14 +306,14 @@ class TwitchAlert {
     return fetch(requestURL, requestOptions);
   }
 
-  onStreamChange(streamInfo) {
+  onStreamChange(streamInfo: StreamChangedEvent) {
     if (streamInfo) {
       const streamerToUpdate = this.streamerWatchList.find(
-        (streamer) => streamer.id === streamInfo.user_id
+        (streamer) => streamer.Id === streamInfo.user_id
       );
 
       if (streamerToUpdate) {
-        if (!streamerToUpdate.isLive) {
+        if (!streamerToUpdate.IsLive) {
           this.alertChannel(streamerToUpdate, this.channelToPostIn);
         }
         streamerToUpdate.updateInfo(streamInfo);

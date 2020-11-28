@@ -1,25 +1,40 @@
-const express = require("express");
-const fetch = require("node-fetch");
-require("dotenv").config();
+import express, { Application, Request, Response } from "express";
+import fetch, { HeadersInit } from "node-fetch";
+import dotenv from "dotenv";
+dotenv.config();
 
-class SubscriptionServer {
-  constructor(accessToken, clientID) {
+enum WebhookRequestType {
+  subscribe = "subscribe",
+  unsubscribe = "unsubscribe",
+}
+
+export default class SubscriptionServer {
+  private app: Application;
+  private port: number | string;
+  private clientID!: string;
+  private accessToken!: string;
+  private appSecret!: string;
+  private webhookEndpoint!: string;
+  private callbackEndpoint!: string;
+  private streamChangeTopicURL!: string;
+  private getUserByNameEndpoint!: string;
+  private subscriptionExpiration!: number;
+  private authorizedHeader!: HeadersInit;
+  private subscriptionRequestBody!: WebhookSubscriptionBody;
+
+  constructor(accessToken: string, clientID: string) {
     this.app = express();
     this.app.use(express.json());
     this.port = process.env.PORT || 443;
-
-    this.subscribe = "subscribe";
-    this.unsubscribe = "unsubscribe";
-
     this.setupTwitchAPIData(accessToken, clientID);
   }
 
-  setupTwitchAPIData(accessToken, clientID) {
+  setupTwitchAPIData(accessToken: string, clientID: string) {
     this.clientID = clientID;
     this.accessToken = accessToken;
-    this.appSecret = process.env.APP_SECRET;
+    this.appSecret = process.env.APP_SECRET || "applicationsecret";
     this.webhookEndpoint = "https://api.twitch.tv/helix/webhooks/hub";
-    this.callbackEndpoint = "https://47b620098de0.ngrok.io";
+    this.callbackEndpoint = "https://10cb5d0d9193.ngrok.io";
     this.streamChangeTopicURL = "https://api.twitch.tv/helix/streams?user_id=";
     this.getUserByNameEndpoint = "https://api.twitch.tv/helix/users?login=";
     this.subscriptionExpiration = 3600;
@@ -30,8 +45,8 @@ class SubscriptionServer {
     };
 
     this.subscriptionRequestBody = {
-      "hub.mode": null,
-      "hub.topic": null,
+      "hub.mode": "",
+      "hub.topic": "",
       "hub.callback": this.callbackEndpoint,
       "hub.secret": this.appSecret,
       "hub.lease_seconds": this.subscriptionExpiration,
@@ -39,19 +54,19 @@ class SubscriptionServer {
   }
 
   async startServerAndcreateSubscriptionEndpoint(
-    subscriptionCallback,
-    serverReadyCallback
+    subscriptionCallback: (streamInfo: StreamChangedEvent) => void,
+    serverReadyCallback: () => void | undefined
   ) {
     this.app
       .route("/")
-      .get((req, res) => {
+      .get((req: Request, res: Response) => {
         // verify that the request signature is valid
 
         if (req.query["hub.challenge"]) {
           res.status(200).send(req.query["hub.challenge"]);
         }
       })
-      .post((req, res) => {
+      .post((req: Request, res: Response) => {
         // verify that the request signature is valid
 
         console.log(req.query);
@@ -64,7 +79,7 @@ class SubscriptionServer {
     this.app.listen(this.port, serverReadyCallback);
   }
 
-  async requestSubscription(mode, channelName) {
+  async requestSubscription(mode: string, channelName: string) {
     let channelId = await this.getChannelIdByName(channelName);
 
     if (channelId) {
@@ -94,28 +109,34 @@ class SubscriptionServer {
     return channelId;
   }
 
-  async removeStreamChangedSubscription(channelName) {
-    return await this.requestSubscription(this.unsubscribe, channelName);
+  async removeStreamChangedSubscription(channelName: string) {
+    return await this.requestSubscription(
+      WebhookRequestType.unsubscribe,
+      channelName
+    );
   }
 
-  async addStreamChangedSubscription(channelName) {
-    return await this.requestSubscription(this.subscribe, channelName);
+  async addStreamChangedSubscription(channelName: string) {
+    return await this.requestSubscription(
+      WebhookRequestType.subscribe,
+      channelName
+    );
   }
 
-  async getChannelIdByName(channelName) {
+  async getChannelIdByName(channelName: string) {
     const requestURL = this.getUserByNameEndpoint + channelName;
     const requestOptions = {
       method: "GET",
       headers: this.authorizedHeader,
     };
 
-    let channelId = null;
+    let channelId: string | null = null;
 
     try {
       const response = await fetch(requestURL, requestOptions);
       if (response.ok) {
         const data = await response.json();
-        channelId = data.data[0].id;
+        channelId = data.data[0].id || null;
       }
     } catch (error) {
       console.log(error);
@@ -124,5 +145,3 @@ class SubscriptionServer {
     return channelId;
   }
 }
-
-module.exports = SubscriptionServer;
